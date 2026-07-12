@@ -18,7 +18,6 @@ import * as Network from "expo-network";
 const PWA_URL = "https://jambh-ell.vercel.app";
 const BRAND_BG = "#0c0c0c";
 const BRAND_ACCENT = "#34E5B2";
-const BRAND_ACCENT_2 = "#7A6BFF";
 
 export default function Index() {
   const webViewRef = useRef<WebView>(null);
@@ -28,7 +27,6 @@ export default function Index() {
   const [canGoBack, setCanGoBack] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [errorState, setErrorState] = useState<null | string>(null);
-  const [currentUrl, setCurrentUrl] = useState(PWA_URL);
   const [progress, setProgress] = useState(0);
 
   // ---- Network check ----
@@ -63,16 +61,7 @@ export default function Index() {
     return () => sub.remove();
   }, [canGoBack]);
 
-  // ---- Pull-to-refresh (native, Android WebView pullToRefreshEnabled prop) ----
-  const onRefresh = useCallback(async () => {
-    const online = await checkNetwork();
-    if (online) {
-      setErrorState(null);
-      webViewRef.current?.reload();
-    }
-  }, [checkNetwork]);
-
-  // ---- Retry from offline / error screen ----
+  // ---- Pull-to-refresh reload ----
   const onRetry = useCallback(async () => {
     setErrorState(null);
     const online = await checkNetwork();
@@ -214,7 +203,6 @@ export default function Index() {
         }}
         onNavigationStateChange={(navState) => {
           setCanGoBack(navState.canGoBack);
-          setCurrentUrl(navState.url);
         }}
         onError={(syntheticEvent) => {
           const { nativeEvent } = syntheticEvent;
