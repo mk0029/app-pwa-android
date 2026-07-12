@@ -1,39 +1,39 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
-  StyleSheet,
   ActivityIndicator,
   BackHandler,
-  Text,
-  Pressable,
-  Platform,
-  StatusBar,
-  Linking,
   Image,
+  Linking,
+  Platform,
+  Pressable,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 import { WebView } from "react-native-webview";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import * as Network from "expo-network";
 
 const PWA_URL = "https://jambh-ell.vercel.app";
-const BRAND_BG = "#0c0c0c";
-const BRAND_ACCENT = "#34E5B2";
+const BG = "#0c0c0c";
+const ACCENT = "#34E5B2";
+const MUTED = "#8a9099";
 
 export default function Index() {
-  const webViewRef = useRef<WebView>(null);
   const insets = useSafeAreaInsets();
+  const webRef = useRef<WebView>(null);
 
   const [loading, setLoading] = useState(true);
-  const [canGoBack, setCanGoBack] = useState(false);
-  const [isConnected, setIsConnected] = useState(true);
-  const [errorState, setErrorState] = useState<null | string>(null);
   const [progress, setProgress] = useState(0);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // ---- Safety net: force-hide the initial loading overlay after N seconds ----
-  // Some environments (e.g. web preview where react-native-webview is a no-op,
-  // or slow networks) never fire onLoadEnd/onLoadProgress. Without this, the
-  // splash overlay would stay forever. We forcibly consider the page "loaded"
-  // after 8 seconds so the WebView (or web iframe fallback) is visible.
+  // Safety-net: hide splash after 8s if WebView events never fire.
   useEffect(() => {
     const t = setTimeout(() => {
       setLoading(false);
@@ -42,31 +42,31 @@ export default function Index() {
     return () => clearTimeout(t);
   }, []);
 
-  // ---- Network check ----
-  const checkNetwork = useCallback(async () => {
+  // Network monitor.
+  const checkNet = useCallback(async () => {
     try {
-      const state = await Network.getNetworkStateAsync();
-      const online = !!(state.isConnected && state.isInternetReachable !== false);
-      setIsConnected(online);
-      return online;
+      const s = await Network.getNetworkStateAsync();
+      const ok = !!(s.isConnected && s.isInternetReachable !== false);
+      setIsOnline(ok);
+      return ok;
     } catch {
-      setIsConnected(true);
+      setIsOnline(true);
       return true;
     }
   }, []);
 
   useEffect(() => {
-    checkNetwork();
-    const id = setInterval(checkNetwork, 5000);
+    checkNet();
+    const id = setInterval(checkNet, 5000);
     return () => clearInterval(id);
-  }, [checkNetwork]);
+  }, [checkNet]);
 
-  // ---- Android hardware back ----
+  // Android hardware back → WebView back.
   useEffect(() => {
     if (Platform.OS !== "android") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (canGoBack && webViewRef.current) {
-        webViewRef.current.goBack();
+      if (canGoBack && webRef.current) {
+        webRef.current.goBack();
         return true;
       }
       return false;
@@ -74,401 +74,358 @@ export default function Index() {
     return () => sub.remove();
   }, [canGoBack]);
 
-  // ---- Pull-to-refresh reload ----
-  const onRetry = useCallback(async () => {
-    setErrorState(null);
-    const online = await checkNetwork();
-    if (online) {
-      webViewRef.current?.reload();
-    }
-  }, [checkNetwork]);
+  const retry = useCallback(async () => {
+    setErrorMsg(null);
+    if (await checkNet()) webRef.current?.reload();
+  }, [checkNet]);
 
-  // ---- External link handling ----
+  // Keep the WebView pinned to jambh-ell.vercel.app.
+  // Everything else opens in the system browser / native handler.
   const shouldStartLoad = useCallback((req: { url: string }) => {
     const url = req.url;
-    // Allow the PWA host, blank pages, data URIs, and about:blank
     if (
       url.startsWith(PWA_URL) ||
       url.startsWith("about:") ||
       url.startsWith("data:") ||
-      url.startsWith("blob:") ||
-      url.startsWith("http://localhost") ||
-      url.startsWith("https://jambh-ell.vercel.app")
+      url.startsWith("blob:")
     ) {
       return true;
     }
-    // Special schemes -> device
-    if (
-      url.startsWith("tel:") ||
-      url.startsWith("mailto:") ||
-      url.startsWith("sms:") ||
-      url.startsWith("whatsapp:") ||
-      url.startsWith("intent:") ||
-      url.startsWith("upi:") ||
-      url.startsWith("geo:")
-    ) {
+    if (/^(tel|mailto|sms|whatsapp|upi|geo|intent):/.test(url)) {
       Linking.openURL(url).catch(() => {});
       return false;
     }
-    // Any other external http(s) URL -> open in system browser
-    if (url.startsWith("http://") || url.startsWith("https://")) {
+    if (/^https?:\/\//.test(url)) {
       Linking.openURL(url).catch(() => {});
       return false;
     }
     return true;
   }, []);
 
-  // Offline UI
-  if (!isConnected) {
+  // ---- Offline ----
+  if (!isOnline) {
     return (
-      <SafeAreaView style={styles.errorContainer} testID="offline-screen">
-        <StatusBar barStyle="light-content" backgroundColor={BRAND_BG} />
-        <View style={styles.errorInner}>
-          <View style={styles.errorIconWrap}>
-            <Text style={styles.errorIcon}>⚡</Text>
-          </View>
-          <Text style={styles.errorTitle} testID="offline-title">You&apos;re offline</Text>
-          <Text style={styles.errorSubtitle}>
-            Please check your internet connection and try again.
-          </Text>
-          <Pressable
-            testID="offline-retry-button"
-            onPress={onRetry}
-            style={({ pressed }) => [
-              styles.retryButton,
-              pressed && styles.retryButtonPressed,
-            ]}
-          >
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
+      <StatusScreen
+        testID="offline-screen"
+        icon="⚡"
+        title="You're offline"
+        subtitle="Check your internet connection and try again."
+        buttonLabel="Retry"
+        onPress={retry}
+        buttonTestID="offline-retry-button"
+      />
     );
   }
 
-  // Error UI (load failure)
-  if (errorState) {
+  // ---- Load error ----
+  if (errorMsg) {
     return (
-      <SafeAreaView style={styles.errorContainer} testID="error-screen">
-        <StatusBar barStyle="light-content" backgroundColor={BRAND_BG} />
-        <View style={styles.errorInner}>
-          <View style={styles.errorIconWrap}>
-            <Text style={styles.errorIcon}>!</Text>
-          </View>
-          <Text style={styles.errorTitle} testID="error-title">Something went wrong</Text>
-          <Text style={styles.errorSubtitle}>{errorState}</Text>
-          <Pressable
-            testID="error-retry-button"
-            onPress={onRetry}
-            style={({ pressed }) => [
-              styles.retryButton,
-              pressed && styles.retryButtonPressed,
-            ]}
-          >
-            <Text style={styles.retryButtonText}>Try again</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
+      <StatusScreen
+        testID="error-screen"
+        icon="!"
+        title="Something went wrong"
+        subtitle={errorMsg}
+        buttonLabel="Try again"
+        onPress={retry}
+        buttonTestID="error-retry-button"
+      />
     );
   }
 
+  // ---- Main ----
   return (
     <View style={styles.root} testID="webview-root">
-      <StatusBar barStyle="light-content" backgroundColor={BRAND_BG} />
-      <View style={{ height: insets.top, backgroundColor: BRAND_BG }} />
+      <StatusBar barStyle="light-content" backgroundColor={BG} />
+      <View style={{ height: insets.top, backgroundColor: BG }} />
 
-      {Platform.OS === "web" ? (
-        // react-native-webview is native-only, AND the PWA sends
-        // `X-Frame-Options: DENY`, so an iframe would render blank.
-        // The Emergent preview page is itself sandboxed, so `window.open`
-        // may navigate in-place and hit X-Frame-Options → ERR_BLOCKED_BY_RESPONSE.
-        // To avoid this we render a plain <a target="_blank"> which always
-        // escapes any frame context. We also show the URL as copyable text.
-        // This branch is ONLY hit in the web preview; real Android/iOS use
-        // the native WebView below.
-        <View style={styles.webInfo} testID="web-preview-info">
-          <Image
-            source={require("../assets/images/splash-image.png")}
-            style={styles.webInfoLogo}
-            resizeMode="contain"
-          />
-          <Text style={styles.webInfoTitle}>Native Mobile App</Text>
-          <Text style={styles.webInfoSubtitle}>
-            Jambh Electricals wraps your PWA as a native app on Android & iOS.
-            {"\n\n"}
-            This web preview cannot display the PWA — the site is protected by
-            <Text style={styles.webInfoCode}> X-Frame-Options: DENY</Text>, so
-            it can never be shown inside a frame.
-            {"\n\n"}
-            To test the real app:{"\n"}
-            1. Scan the Expo Go QR code with your phone{"\n"}
-            2. Or click &quot;Publish&quot; (top-right) to build an APK
-          </Text>
+      {Platform.OS === "web" ? <WebPreviewCard /> : <NativeWebView
+        webRef={webRef}
+        setLoading={setLoading}
+        setProgress={setProgress}
+        setCanGoBack={setCanGoBack}
+        setErrorMsg={setErrorMsg}
+        shouldStartLoad={shouldStartLoad}
+      />}
 
-          {React.createElement(
-            "a",
-            {
-              href: PWA_URL,
-              target: "_blank",
-              rel: "noopener noreferrer",
-              "data-testid": "open-pwa-in-browser",
-              style: {
-                display: "inline-block",
-                marginTop: 8,
-                marginBottom: 20,
-                paddingLeft: 28,
-                paddingRight: 28,
-                paddingTop: 14,
-                paddingBottom: 14,
-                borderRadius: 12,
-                backgroundColor: BRAND_ACCENT,
-                color: "#0c0c0c",
-                fontSize: 15,
-                fontWeight: 700,
-                letterSpacing: 0.3,
-                textDecoration: "none",
-                textAlign: "center",
-                minWidth: 220,
-              },
-            },
-            "Open PWA in New Tab ↗"
-          )}
-
-          <Text style={styles.webInfoUrl} selectable testID="pwa-url-text">
-            {PWA_URL}
-          </Text>
-          <Text style={styles.webInfoUrlHint}>
-            (Tap-and-hold to copy the URL)
-          </Text>
-        </View>
-      ) : (
-        <WebView
-          ref={webViewRef}
-          testID="pwa-webview"
-          source={{ uri: PWA_URL }}
-          style={styles.webview}
-          containerStyle={styles.webviewContainer}
-          startInLoadingState
-          allowsBackForwardNavigationGestures
-          domStorageEnabled
-          javaScriptEnabled
-          thirdPartyCookiesEnabled
-          sharedCookiesEnabled
-          setSupportMultipleWindows={false}
-          allowsInlineMediaPlayback
-          mediaPlaybackRequiresUserAction={false}
-          allowFileAccess
-          allowFileAccessFromFileURLs
-          allowUniversalAccessFromFileURLs
-          geolocationEnabled
-          mixedContentMode="always"
-          originWhitelist={["*"]}
-          pullToRefreshEnabled
-          bounces
-          overScrollMode="always"
-          userAgent={
-            Platform.OS === "ios"
-              ? "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 JambhElectricalsApp/1.0"
-              : "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 JambhElectricalsApp/1.0"
-          }
-          onShouldStartLoadWithRequest={shouldStartLoad}
-          onLoadStart={() => {
-            setLoading(true);
-          }}
-          onLoadProgress={({ nativeEvent }) => setProgress(nativeEvent.progress)}
-          onLoadEnd={() => {
-            setLoading(false);
-          }}
-          onNavigationStateChange={(navState) => {
-            setCanGoBack(navState.canGoBack);
-          }}
-          onError={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
-            setErrorState(
-              nativeEvent.description || "Unable to load the app. Please try again."
-            );
-          }}
-          onHttpError={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
-            if (nativeEvent.statusCode >= 500) {
-              setErrorState(
-                `Server returned ${nativeEvent.statusCode}. Please try again.`
-              );
-            }
-          }}
-          renderLoading={() => <View />}
-        />
-      )}
-
-      {/* Top progress bar */}
-      {loading && progress < 1 ? (
+      {/* Top thin progress bar (mobile only, hidden after full load) */}
+      {Platform.OS !== "web" && loading && progress < 1 ? (
         <View
           style={[
             styles.progressBar,
-            { top: insets.top, width: `${Math.max(5, progress * 100)}%`, pointerEvents: "none" },
+            {
+              top: insets.top,
+              width: `${Math.max(5, progress * 100)}%`,
+            },
           ]}
         />
       ) : null}
 
-      {/* Initial full-screen splash-style loader (only for first load) */}
-      {loading && progress < 0.1 ? (
-        <View style={[styles.initialOverlay, { pointerEvents: "none" }]}>
+      {/* Splash overlay while WebView boots (mobile only) */}
+      {Platform.OS !== "web" && loading && progress < 0.1 ? (
+        <View style={styles.splash} pointerEvents="none">
           <Image
             source={require("../assets/images/splash-image.png")}
-            style={styles.initialLogo}
+            style={styles.splashLogo}
             resizeMode="contain"
           />
-          <ActivityIndicator size="small" color={BRAND_ACCENT} style={{ marginTop: 24 }} />
-          <Text style={styles.initialText}>Loading Jambh Electricals…</Text>
+          <ActivityIndicator size="small" color={ACCENT} style={{ marginTop: 20 }} />
         </View>
       ) : null}
     </View>
   );
 }
 
+/* ---------- Sub-components ---------- */
+
+function NativeWebView(props: {
+  webRef: React.RefObject<WebView>;
+  setLoading: (v: boolean) => void;
+  setProgress: (v: number) => void;
+  setCanGoBack: (v: boolean) => void;
+  setErrorMsg: (v: string | null) => void;
+  shouldStartLoad: (req: { url: string }) => boolean;
+}) {
+  return (
+    <WebView
+      ref={props.webRef}
+      testID="pwa-webview"
+      source={{ uri: PWA_URL }}
+      style={styles.webview}
+      startInLoadingState
+      allowsBackForwardNavigationGestures
+      domStorageEnabled
+      javaScriptEnabled
+      thirdPartyCookiesEnabled
+      sharedCookiesEnabled
+      setSupportMultipleWindows={false}
+      allowsInlineMediaPlayback
+      mediaPlaybackRequiresUserAction={false}
+      allowFileAccess
+      allowFileAccessFromFileURLs
+      allowUniversalAccessFromFileURLs
+      geolocationEnabled
+      mixedContentMode="always"
+      originWhitelist={["*"]}
+      pullToRefreshEnabled
+      bounces
+      overScrollMode="always"
+      onShouldStartLoadWithRequest={props.shouldStartLoad}
+      onLoadStart={() => props.setLoading(true)}
+      onLoadProgress={({ nativeEvent }) => props.setProgress(nativeEvent.progress)}
+      onLoadEnd={() => props.setLoading(false)}
+      onNavigationStateChange={(n) => props.setCanGoBack(n.canGoBack)}
+      onError={(e) =>
+        props.setErrorMsg(
+          e.nativeEvent.description || "Unable to load the app."
+        )
+      }
+      onHttpError={(e) => {
+        if (e.nativeEvent.statusCode >= 500) {
+          props.setErrorMsg(`Server error ${e.nativeEvent.statusCode}.`);
+        }
+      }}
+      renderLoading={() => <View />}
+    />
+  );
+}
+
+function WebPreviewCard() {
+  return (
+    <View style={styles.previewWrap} testID="web-preview-info">
+      <View style={styles.previewCard}>
+        <Image
+          source={require("../assets/images/splash-image.png")}
+          style={styles.previewLogo}
+          resizeMode="contain"
+        />
+        <Text style={styles.previewTitle}>Jambh Electricals</Text>
+        <Text style={styles.previewTag}>NATIVE MOBILE APP</Text>
+
+        <Text style={styles.previewBody}>
+          Preview the app on your phone via Expo Go, or publish to get an APK.
+        </Text>
+
+        {/* Real HTML anchor — always opens a new tab, escapes any iframe. */}
+        {React.createElement(
+          "a",
+          {
+            href: PWA_URL,
+            target: "_blank",
+            rel: "noopener noreferrer",
+            "data-testid": "open-pwa-in-browser",
+            style: previewButtonStyle,
+          },
+          "Open PWA ↗"
+        )}
+      </View>
+    </View>
+  );
+}
+
+function StatusScreen(props: {
+  testID: string;
+  icon: string;
+  title: string;
+  subtitle: string;
+  buttonLabel: string;
+  onPress: () => void;
+  buttonTestID: string;
+}) {
+  return (
+    <SafeAreaView style={styles.statusContainer} testID={props.testID}>
+      <StatusBar barStyle="light-content" backgroundColor={BG} />
+      <View style={styles.statusInner}>
+        <View style={styles.statusIconWrap}>
+          <Text style={styles.statusIcon}>{props.icon}</Text>
+        </View>
+        <Text style={styles.statusTitle}>{props.title}</Text>
+        <Text style={styles.statusSubtitle}>{props.subtitle}</Text>
+        <Pressable
+          testID={props.buttonTestID}
+          onPress={props.onPress}
+          style={({ pressed }) => [
+            styles.button,
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={styles.buttonText}>{props.buttonLabel}</Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+/* ---------- Styles ---------- */
+
+const previewButtonStyle = {
+  display: "inline-block",
+  marginTop: 16,
+  paddingLeft: 24,
+  paddingRight: 24,
+  paddingTop: 12,
+  paddingBottom: 12,
+  borderRadius: 999,
+  backgroundColor: ACCENT,
+  color: "#0a0a0a",
+  fontSize: 14,
+  fontWeight: 700,
+  letterSpacing: 0.4,
+  textDecoration: "none",
+  textAlign: "center" as const,
+};
+
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: BRAND_BG,
-  },
-  scroll: {
-    flex: 1,
-    backgroundColor: BRAND_BG,
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
-  webviewContainer: {
-    flex: 1,
-    backgroundColor: "#ffffff",
-  },
-  webview: {
-    flex: 1,
-    backgroundColor: "#ffffff",
-  },
-  webInfo: {
-    flex: 1,
-    backgroundColor: BRAND_BG,
+  root: { flex: 1, backgroundColor: BG },
+  webview: { flex: 1, backgroundColor: "#ffffff" },
+
+  // Splash overlay (mobile boot)
+  splash: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: BG,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 32,
   },
-  webInfoLogo: {
-    width: 160,
-    height: 160,
-    marginBottom: 24,
-  },
-  webInfoTitle: {
-    fontSize: 22,
-    color: "#fff",
-    fontWeight: "700",
-    marginBottom: 12,
-    letterSpacing: 0.2,
-  },
-  webInfoSubtitle: {
-    fontSize: 14,
-    color: "#9aa0a6",
-    textAlign: "center",
-    lineHeight: 22,
-    marginBottom: 24,
-    maxWidth: 380,
-  },
-  webInfoCode: {
-    fontFamily: Platform.OS === "web" ? "monospace" : undefined,
-    color: "#f3b04f",
-    fontSize: 13,
-  },
-  webInfoUrl: {
-    fontSize: 13,
-    color: "#c5f9e4",
-    textAlign: "center",
-    marginTop: 8,
-    fontFamily: Platform.OS === "web" ? "monospace" : undefined,
-  },
-  webInfoUrlHint: {
-    fontSize: 12,
-    color: "#6b7076",
-    marginTop: 4,
-    textAlign: "center",
-  },
+  splashLogo: { width: 160, height: 160 },
+
+  // Progress bar
   progressBar: {
     position: "absolute",
     left: 0,
     height: 2,
-    backgroundColor: BRAND_ACCENT,
+    backgroundColor: ACCENT,
   },
-  initialOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: BRAND_BG,
+
+  // Web preview card
+  previewWrap: {
+    flex: 1,
+    backgroundColor: BG,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 24,
   },
-  initialLogo: {
-    width: 180,
-    height: 180,
+  previewCard: {
+    width: "100%",
+    maxWidth: 320,
+    backgroundColor: "#141416",
+    borderWidth: 1,
+    borderColor: "#26282c",
+    borderRadius: 20,
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+    alignItems: "center",
   },
-  initialText: {
-    marginTop: 12,
-    color: "#9aa0a6",
+  previewLogo: { width: 72, height: 72, marginBottom: 16 },
+  previewTitle: {
+    fontSize: 18,
+    color: "#ffffff",
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  previewTag: {
+    fontSize: 10,
+    color: ACCENT,
+    fontWeight: "700",
+    letterSpacing: 2,
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  previewBody: {
     fontSize: 13,
-    letterSpacing: 0.3,
+    color: MUTED,
+    textAlign: "center",
+    lineHeight: 19,
   },
-  errorContainer: {
-    flex: 1,
-    backgroundColor: BRAND_BG,
-  },
-  errorInner: {
+
+  // Status screens (offline / error)
+  statusContainer: { flex: 1, backgroundColor: BG },
+  statusInner: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 32,
   },
-  errorIconWrap: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: "#1a1a1a",
+  statusIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "#141416",
     borderWidth: 1,
-    borderColor: "#262626",
+    borderColor: "#26282c",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 24,
+    marginBottom: 20,
   },
-  errorIcon: {
-    fontSize: 40,
-    color: BRAND_ACCENT,
+  statusIcon: { fontSize: 32, color: ACCENT, fontWeight: "700" },
+  statusTitle: {
+    fontSize: 20,
+    color: "#ffffff",
     fontWeight: "700",
-  },
-  errorTitle: {
-    fontSize: 22,
-    color: "#fff",
-    fontWeight: "700",
-    marginBottom: 8,
+    marginBottom: 6,
     letterSpacing: 0.2,
   },
-  errorSubtitle: {
-    fontSize: 14,
-    color: "#9aa0a6",
+  statusSubtitle: {
+    fontSize: 13,
+    color: MUTED,
     textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 28,
+    lineHeight: 19,
+    marginBottom: 24,
+    maxWidth: 320,
   },
-  retryButton: {
+
+  // Buttons (native)
+  button: {
     paddingHorizontal: 28,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: BRAND_ACCENT,
-    minWidth: 160,
+    paddingVertical: 12,
+    borderRadius: 999,
+    backgroundColor: ACCENT,
+    minWidth: 140,
     alignItems: "center",
   },
-  retryButtonPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
-  },
-  retryButtonText: {
-    color: "#0c0c0c",
-    fontSize: 15,
+  buttonPressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
+  buttonText: {
+    color: "#0a0a0a",
+    fontSize: 14,
     fontWeight: "700",
-    letterSpacing: 0.3,
+    letterSpacing: 0.4,
   },
 });
