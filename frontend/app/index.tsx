@@ -29,6 +29,19 @@ export default function Index() {
   const [errorState, setErrorState] = useState<null | string>(null);
   const [progress, setProgress] = useState(0);
 
+  // ---- Safety net: force-hide the initial loading overlay after N seconds ----
+  // Some environments (e.g. web preview where react-native-webview is a no-op,
+  // or slow networks) never fire onLoadEnd/onLoadProgress. Without this, the
+  // splash overlay would stay forever. We forcibly consider the page "loaded"
+  // after 8 seconds so the WebView (or web iframe fallback) is visible.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setLoading(false);
+      setProgress(1);
+    }, 8000);
+    return () => clearTimeout(t);
+  }, []);
+
   // ---- Network check ----
   const checkNetwork = useCallback(async () => {
     try {
@@ -164,62 +177,97 @@ export default function Index() {
       <StatusBar barStyle="light-content" backgroundColor={BRAND_BG} />
       <View style={{ height: insets.top, backgroundColor: BRAND_BG }} />
 
-      <WebView
-        ref={webViewRef}
-        testID="pwa-webview"
-        source={{ uri: PWA_URL }}
-        style={styles.webview}
-        containerStyle={styles.webviewContainer}
-        startInLoadingState
-        allowsBackForwardNavigationGestures
-        domStorageEnabled
-        javaScriptEnabled
-        thirdPartyCookiesEnabled
-        sharedCookiesEnabled
-        setSupportMultipleWindows={false}
-        allowsInlineMediaPlayback
-        mediaPlaybackRequiresUserAction={false}
-        allowFileAccess
-        allowFileAccessFromFileURLs
-        allowUniversalAccessFromFileURLs
-        geolocationEnabled
-        mixedContentMode="always"
-        originWhitelist={["*"]}
-        pullToRefreshEnabled
-        bounces
-        overScrollMode="always"
-        userAgent={
-          Platform.OS === "ios"
-            ? "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 JambhElectricalsApp/1.0"
-            : "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 JambhElectricalsApp/1.0"
-        }
-        onShouldStartLoadWithRequest={shouldStartLoad}
-        onLoadStart={() => {
-          setLoading(true);
-        }}
-        onLoadProgress={({ nativeEvent }) => setProgress(nativeEvent.progress)}
-        onLoadEnd={() => {
-          setLoading(false);
-        }}
-        onNavigationStateChange={(navState) => {
-          setCanGoBack(navState.canGoBack);
-        }}
-        onError={(syntheticEvent) => {
-          const { nativeEvent } = syntheticEvent;
-          setErrorState(
-            nativeEvent.description || "Unable to load the app. Please try again."
-          );
-        }}
-        onHttpError={(syntheticEvent) => {
-          const { nativeEvent } = syntheticEvent;
-          if (nativeEvent.statusCode >= 500) {
-            setErrorState(
-              `Server returned ${nativeEvent.statusCode}. Please try again.`
-            );
+      {Platform.OS === "web" ? (
+        // react-native-webview is native-only, AND the PWA sends
+        // `X-Frame-Options: DENY`, so an iframe would render blank.
+        // Show a friendly message with a button to open the PWA in a new tab.
+        // This branch is ONLY hit in the web preview; real Android/iOS use
+        // the native WebView below.
+        <View style={styles.webInfo} testID="web-preview-info">
+          <Image
+            source={require("../assets/images/splash-image.png")}
+            style={styles.webInfoLogo}
+            resizeMode="contain"
+          />
+          <Text style={styles.webInfoTitle}>Preview Mode</Text>
+          <Text style={styles.webInfoSubtitle}>
+            The Jambh Electricals app runs as a native WebView on Android & iOS.
+            The web preview cannot embed the site (blocked by security headers).
+            {"\n\n"}
+            Scan the Expo Go QR code on your phone to test the real app, or open
+            the web version below.
+          </Text>
+          <Pressable
+            testID="open-pwa-in-browser"
+            onPress={() => {
+              Linking.openURL(PWA_URL).catch(() => {});
+            }}
+            style={({ pressed }) => [
+              styles.retryButton,
+              pressed && styles.retryButtonPressed,
+            ]}
+          >
+            <Text style={styles.retryButtonText}>Open PWA in Browser</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <WebView
+          ref={webViewRef}
+          testID="pwa-webview"
+          source={{ uri: PWA_URL }}
+          style={styles.webview}
+          containerStyle={styles.webviewContainer}
+          startInLoadingState
+          allowsBackForwardNavigationGestures
+          domStorageEnabled
+          javaScriptEnabled
+          thirdPartyCookiesEnabled
+          sharedCookiesEnabled
+          setSupportMultipleWindows={false}
+          allowsInlineMediaPlayback
+          mediaPlaybackRequiresUserAction={false}
+          allowFileAccess
+          allowFileAccessFromFileURLs
+          allowUniversalAccessFromFileURLs
+          geolocationEnabled
+          mixedContentMode="always"
+          originWhitelist={["*"]}
+          pullToRefreshEnabled
+          bounces
+          overScrollMode="always"
+          userAgent={
+            Platform.OS === "ios"
+              ? "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 JambhElectricalsApp/1.0"
+              : "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 JambhElectricalsApp/1.0"
           }
-        }}
-        renderLoading={() => <View />}
-      />
+          onShouldStartLoadWithRequest={shouldStartLoad}
+          onLoadStart={() => {
+            setLoading(true);
+          }}
+          onLoadProgress={({ nativeEvent }) => setProgress(nativeEvent.progress)}
+          onLoadEnd={() => {
+            setLoading(false);
+          }}
+          onNavigationStateChange={(navState) => {
+            setCanGoBack(navState.canGoBack);
+          }}
+          onError={(syntheticEvent) => {
+            const { nativeEvent } = syntheticEvent;
+            setErrorState(
+              nativeEvent.description || "Unable to load the app. Please try again."
+            );
+          }}
+          onHttpError={(syntheticEvent) => {
+            const { nativeEvent } = syntheticEvent;
+            if (nativeEvent.statusCode >= 500) {
+              setErrorState(
+                `Server returned ${nativeEvent.statusCode}. Please try again.`
+              );
+            }
+          }}
+          renderLoading={() => <View />}
+        />
+      )}
 
       {/* Top progress bar */}
       {loading && progress < 1 ? (
@@ -264,6 +312,33 @@ const styles = StyleSheet.create({
   webview: {
     flex: 1,
     backgroundColor: "#ffffff",
+  },
+  webInfo: {
+    flex: 1,
+    backgroundColor: BRAND_BG,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  webInfoLogo: {
+    width: 160,
+    height: 160,
+    marginBottom: 24,
+  },
+  webInfoTitle: {
+    fontSize: 22,
+    color: "#fff",
+    fontWeight: "700",
+    marginBottom: 12,
+    letterSpacing: 0.2,
+  },
+  webInfoSubtitle: {
+    fontSize: 14,
+    color: "#9aa0a6",
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 28,
+    maxWidth: 380,
   },
   progressBar: {
     position: "absolute",
