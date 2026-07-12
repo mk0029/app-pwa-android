@@ -1,0 +1,65 @@
+{
+  "expo": {
+    "name": "Jambh Electricals",
+    "slug": "jambh-electricals",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "jambhelectricals",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.emergent.pwaiosandroid.db36bl",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Take photos and scan items in the app",
+        "NSMicrophoneUsageDescription": "Record audio for in-app features",
+        "NSLocationWhenInUseUsageDescription": "Show your location for delivery and services",
+        "NSPhotoLibraryUsageDescription": "Upload photos from your gallery",
+        "NSPhotoLibraryAddUsageDescription": "Save photos to your gallery",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#0c0c0c"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.emergent.pwaiosandroid.db36bl",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "VIBRATE"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-image.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#0c0c0c"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
