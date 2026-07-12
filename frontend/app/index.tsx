@@ -272,14 +272,16 @@ export default function Index() {
       {/* Top progress bar */}
       {loading && progress < 1 ? (
         <View
-          pointerEvents="none"
-          style={[styles.progressBar, { top: insets.top, width: `${Math.max(5, progress * 100)}%` }]}
+          style={[
+            styles.progressBar,
+            { top: insets.top, width: `${Math.max(5, progress * 100)}%`, pointerEvents: "none" },
+          ]}
         />
       ) : null}
 
       {/* Initial full-screen splash-style loader (only for first load) */}
       {loading && progress < 0.1 ? (
-        <View style={styles.initialOverlay} pointerEvents="none">
+        <View style={[styles.initialOverlay, { pointerEvents: "none" }]}>
           <Image
             source={require("../assets/images/splash-image.png")}
             style={styles.initialLogo}
