@@ -180,7 +180,10 @@ export default function Index() {
       {Platform.OS === "web" ? (
         // react-native-webview is native-only, AND the PWA sends
         // `X-Frame-Options: DENY`, so an iframe would render blank.
-        // Show a friendly message with a button to open the PWA in a new tab.
+        // The Emergent preview page is itself sandboxed, so `window.open`
+        // may navigate in-place and hit X-Frame-Options → ERR_BLOCKED_BY_RESPONSE.
+        // To avoid this we render a plain <a target="_blank"> which always
+        // escapes any frame context. We also show the URL as copyable text.
         // This branch is ONLY hit in the web preview; real Android/iOS use
         // the native WebView below.
         <View style={styles.webInfo} testID="web-preview-info">
@@ -189,26 +192,54 @@ export default function Index() {
             style={styles.webInfoLogo}
             resizeMode="contain"
           />
-          <Text style={styles.webInfoTitle}>Preview Mode</Text>
+          <Text style={styles.webInfoTitle}>Native Mobile App</Text>
           <Text style={styles.webInfoSubtitle}>
-            The Jambh Electricals app runs as a native WebView on Android & iOS.
-            The web preview cannot embed the site (blocked by security headers).
+            Jambh Electricals wraps your PWA as a native app on Android & iOS.
             {"\n\n"}
-            Scan the Expo Go QR code on your phone to test the real app, or open
-            the web version below.
+            This web preview cannot display the PWA — the site is protected by
+            <Text style={styles.webInfoCode}> X-Frame-Options: DENY</Text>, so
+            it can never be shown inside a frame.
+            {"\n\n"}
+            To test the real app:{"\n"}
+            1. Scan the Expo Go QR code with your phone{"\n"}
+            2. Or click &quot;Publish&quot; (top-right) to build an APK
           </Text>
-          <Pressable
-            testID="open-pwa-in-browser"
-            onPress={() => {
-              Linking.openURL(PWA_URL).catch(() => {});
-            }}
-            style={({ pressed }) => [
-              styles.retryButton,
-              pressed && styles.retryButtonPressed,
-            ]}
-          >
-            <Text style={styles.retryButtonText}>Open PWA in Browser</Text>
-          </Pressable>
+
+          {React.createElement(
+            "a",
+            {
+              href: PWA_URL,
+              target: "_blank",
+              rel: "noopener noreferrer",
+              "data-testid": "open-pwa-in-browser",
+              style: {
+                display: "inline-block",
+                marginTop: 8,
+                marginBottom: 20,
+                paddingLeft: 28,
+                paddingRight: 28,
+                paddingTop: 14,
+                paddingBottom: 14,
+                borderRadius: 12,
+                backgroundColor: BRAND_ACCENT,
+                color: "#0c0c0c",
+                fontSize: 15,
+                fontWeight: 700,
+                letterSpacing: 0.3,
+                textDecoration: "none",
+                textAlign: "center",
+                minWidth: 220,
+              },
+            },
+            "Open PWA in New Tab ↗"
+          )}
+
+          <Text style={styles.webInfoUrl} selectable testID="pwa-url-text">
+            {PWA_URL}
+          </Text>
+          <Text style={styles.webInfoUrlHint}>
+            (Tap-and-hold to copy the URL)
+          </Text>
         </View>
       ) : (
         <WebView
@@ -338,9 +369,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#9aa0a6",
     textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 28,
+    lineHeight: 22,
+    marginBottom: 24,
     maxWidth: 380,
+  },
+  webInfoCode: {
+    fontFamily: Platform.OS === "web" ? "monospace" : undefined,
+    color: "#f3b04f",
+    fontSize: 13,
+  },
+  webInfoUrl: {
+    fontSize: 13,
+    color: "#c5f9e4",
+    textAlign: "center",
+    marginTop: 8,
+    fontFamily: Platform.OS === "web" ? "monospace" : undefined,
+  },
+  webInfoUrlHint: {
+    fontSize: 12,
+    color: "#6b7076",
+    marginTop: 4,
+    textAlign: "center",
   },
   progressBar: {
     position: "absolute",
